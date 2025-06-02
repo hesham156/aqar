@@ -5,12 +5,9 @@ import * as Yup from 'yup';
 import { Eye, EyeOff, LogIn } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { toast } from 'react-toastify';
-import { sendPasswordResetEmail } from 'firebase/auth';
-import { auth } from '../../firebase/config';
 
 const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
-  const [isResettingPassword, setIsResettingPassword] = useState(false);
   const { signIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -36,68 +33,14 @@ const Login = () => {
         toast.success('Signed in successfully!');
         // Redirect to the previous page or dashboard
         navigate(from, { replace: true });
-      } catch (error: any) {
+      } catch (error) {
         console.error('Login error:', error);
-        
-        // Handle specific Firebase auth errors
-        switch (error.code) {
-          case 'auth/invalid-credential':
-            toast.error('Invalid email or password. Please try again.');
-            break;
-          case 'auth/user-disabled':
-            toast.error('This account has been disabled. Please contact support.');
-            break;
-          case 'auth/user-not-found':
-            toast.error('No account found with this email. Please check your email or sign up.');
-            break;
-          case 'auth/too-many-requests':
-            toast.error('Too many failed attempts. Please try again later.');
-            break;
-          case 'auth/network-request-failed':
-            toast.error('Network error. Please check your internet connection.');
-            break;
-          default:
-            toast.error('Failed to sign in. Please try again.');
-        }
+        toast.error('Failed to sign in. Please check your credentials.');
       } finally {
         setSubmitting(false);
       }
     },
   });
-
-  const handleForgotPassword = async () => {
-    if (!formik.values.email) {
-      toast.error('Please enter your email address');
-      return;
-    }
-
-    if (!formik.errors.email) {
-      setIsResettingPassword(true);
-      try {
-        await sendPasswordResetEmail(auth, formik.values.email);
-        toast.success('Password reset email sent! Please check your inbox.');
-      } catch (error: any) {
-        console.error('Password reset error:', error);
-        switch (error.code) {
-          case 'auth/user-not-found':
-            toast.error('No account found with this email address.');
-            break;
-          case 'auth/invalid-email':
-            toast.error('Please enter a valid email address.');
-            break;
-          case 'auth/too-many-requests':
-            toast.error('Too many requests. Please try again later.');
-            break;
-          default:
-            toast.error('Failed to send reset email. Please try again.');
-        }
-      } finally {
-        setIsResettingPassword(false);
-      }
-    } else {
-      toast.error('Please enter a valid email address');
-    }
-  };
 
   const togglePasswordVisibility = () => {
     setShowPassword(!showPassword);
@@ -197,14 +140,11 @@ const Login = () => {
               </label>
             </div>
 
-            <button
-              type="button"
-              onClick={handleForgotPassword}
-              disabled={isResettingPassword}
-              className="text-sm font-medium text-primary-600 hover:text-primary-500 disabled:opacity-50"
-            >
-              {isResettingPassword ? 'Sending...' : 'Forgot your password?'}
-            </button>
+            <div className="text-sm">
+              <a href="#" className="font-medium text-primary-600 hover:text-primary-500">
+                Forgot your password?
+              </a>
+            </div>
           </div>
 
           <div>

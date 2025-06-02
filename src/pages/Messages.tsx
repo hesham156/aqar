@@ -105,10 +105,18 @@ const Messages = () => {
           });
         });
 
+        // If no chat users found, set empty array and return
+        const userIdsArray = Array.from(userIds);
+        if (userIdsArray.length === 0) {
+          setChatUsers([]);
+          setLoading(false);
+          return;
+        }
+
         // Fetch user details
         const usersQuery = query(
           collection(db, 'users'),
-          where('uid', 'in', Array.from(userIds))
+          where('uid', 'in', userIdsArray)
         );
         
         const usersSnapshot = await getDocs(usersQuery);

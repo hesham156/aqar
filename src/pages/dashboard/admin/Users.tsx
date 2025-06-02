@@ -11,8 +11,12 @@ import {
   Ban,
   CheckCircle,
   AlertCircle,
+  MessageSquare,
+  Loader2,
+  Send,
+  X
 } from 'lucide-react';
-import { collection, query, orderBy, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, doc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../../firebase/config';
 import { useAuth, UserRole } from '../../../contexts/AuthContext';
 import DashboardLayout from '../../../components/dashboard/DashboardLayout';
@@ -40,6 +44,10 @@ const Users = () => {
   const [selectedStatus, setSelectedStatus] = useState<'active' | 'suspended' | 'pending' | 'all'>('all');
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'role'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [showChatModal, setShowChatModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [message, setMessage] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -105,6 +113,42 @@ const Users = () => {
     } catch (error) {
       console.error('Error updating user status:', error);
       toast.error('Failed to update user status');
+    }
+  };
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !selectedUser || !message.trim()) return;
+
+    setSendingMessage(true);
+    try {
+      // Create a new chat if it doesn't exist
+      const chatRef = await addDoc(collection(db, 'chats'), {
+        participants: [user.uid, selectedUser.uid],
+        lastMessage: message,
+        lastMessageAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+      });
+
+      // Add the message
+      await addDoc(collection(db, 'messages'), {
+        chatId: chatRef.id,
+        senderId: user.uid,
+        receiverId: selectedUser.uid,
+        content: message,
+        read: false,
+        createdAt: serverTimestamp(),
+      });
+
+      toast.success('Message sent successfully');
+      setMessage('');
+      setShowChatModal(false);
+      setSelectedUser(null);
+    } catch (error) {
+      console.error('Error sending message:', error);
+      toast.error('Failed to send message');
+    } finally {
+      setSendingMessage(false);
     }
   };
 
@@ -284,6 +328,16 @@ const Users = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex items-center space-x-3">
+                          <button
+                            onClick={() => {
+                              setSelectedUser(user);
+                              setShowChatModal(true);
+                            }}
+                            className="text-primary-600 hover:text-primary-900 flex items-center"
+                          >
+                            <MessageSquare className="h-4 w-4 mr-1" />
+                            Message
+                          </button>
                           {user.status === 'suspended' ? (
                             <button
                               onClick={() => handleStatusChange(user.uid, 'active')}
@@ -311,6 +365,77 @@ const Users = () => {
           </div>
         )}
       </div>
+
+      {/* Chat Modal */}
+      {showChatModal && selectedUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="flex justify-between items-start mb-4">
+              <h3 className="text-lg font-medium text-gray-900">
+                Message {selectedUser.displayName}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowChatModal(false);
+                  setSelectedUser(null);
+                  setMessage('');
+                }}
+                className="text-gray-400 hover:text-gray-500"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSendMessage}>
+              <div className="mb-4">
+                <label htmlFor="message" className="block text-sm font-medium text-gray-700 mb-1">
+                  Message
+                </label>
+                <textarea
+                  id="message"
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                  placeholder="Type your message here..."
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  required
+                ></textarea>
+              </div>
+
+              <div className="flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowChatModal(false);
+                    setSelectedUser(null);
+                    setMessage('');
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={sendingMessage || !message.trim()}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                >
+                  {sendingMessage ? (
+                    <>
+                      <Loader2 className="animate-spin h-4 w-4 mr-2" />
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4 mr-2" />
+                      Send Message
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 };
