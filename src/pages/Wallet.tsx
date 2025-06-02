@@ -271,7 +271,7 @@ const Wallet = () => {
                             : 'text-warning-600'
                         }`}>
                           {transaction.type === 'deposit' || transaction.type === 'refund' ? '+' : '-'}
-                          {transaction.amount.toLocaleString()} SAR
+                          {transaction.amount?.toLocaleString()} SAR
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">

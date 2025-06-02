@@ -388,7 +388,7 @@ const Transactions = () => {
                             : 'text-warning-600'
                         }`}>
                           {transaction.type === 'refund' ? '-' : '+'}
-                          {transaction.amount.toLocaleString()} SAR
+                          {transaction.amount?.toLocaleString()} SAR
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
