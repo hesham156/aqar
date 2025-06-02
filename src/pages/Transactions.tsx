@@ -25,16 +25,13 @@ import { toast } from 'react-toastify';
 
 interface Transaction {
   id: string;
-  type: 'payment' | 'refund' | 'commission' | 'withdrawal';
+  type: 'withdrawal' | 'payment' | 'refund' | 'commission';
   amount: number;
   status: 'completed' | 'pending' | 'failed';
   description: string;
-  buyerId?: string;
-  buyerName?: string;
-  sellerId?: string;
-  sellerName?: string;
-  propertyId?: string;
-  propertyTitle?: string;
+  userId: string;
+  userName: string;
+  method?: string;
   createdAt: string;
 }
 
@@ -49,8 +46,6 @@ const Transactions = () => {
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [newStatus, setNewStatus] = useState<'completed' | 'pending' | 'failed'>('completed');
-
-  // Stats for different roles
   const [stats, setStats] = useState({
     totalTransactions: 0,
     totalAmount: 0,
@@ -71,16 +66,10 @@ const Transactions = () => {
             collection(db, 'withdrawalRequests'),
             orderBy('createdAt', 'desc')
           );
-        } else if (user.role === 'seller') {
-          transactionsQuery = query(
-            collection(db, 'withdrawalRequests'),
-            where('sellerId', '==', user.uid),
-            orderBy('createdAt', 'desc')
-          );
         } else {
           transactionsQuery = query(
             collection(db, 'withdrawalRequests'),
-            where('buyerId', '==', user.uid),
+            where('userId', '==', user.uid),
             orderBy('createdAt', 'desc')
           );
         }
@@ -88,14 +77,15 @@ const Transactions = () => {
         const snapshot = await getDocs(transactionsQuery);
         const transactionsData = snapshot.docs.map(doc => ({
           id: doc.id,
-          ...doc.data()
+          ...doc.data(),
+          createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || doc.data().createdAt
         })) as Transaction[];
 
         // Calculate stats
         const total = transactionsData.reduce((sum, tx) => sum + tx.amount, 0);
         const completed = transactionsData.filter(tx => tx.status === 'completed');
         const pending = transactionsData.filter(tx => tx.status === 'pending');
-        const successRate = (completed.length / transactionsData.length) * 100;
+        const successRate = transactionsData.length > 0 ? (completed.length / transactionsData.length) * 100 : 0;
         const pendingAmount = pending.reduce((sum, tx) => sum + tx.amount, 0);
 
         setStats({
@@ -115,8 +105,6 @@ const Transactions = () => {
     };
 
     fetchTransactions();
-      console.log(transactions)
-
   }, [user]);
 
   const handleUpdateStatus = async (transaction: Transaction, status: 'completed' | 'pending' | 'failed') => {
@@ -130,14 +118,16 @@ const Transactions = () => {
         updatedAt: new Date().toISOString(),
       });
 
-      // If it's a withdrawal and status is completed, update user's wallet balance
+      // If completing a withdrawal, update user's wallet balance
       if (transaction.type === 'withdrawal' && status === 'completed') {
-        const userRef = doc(db, 'users', transaction.buyerId || transaction.sellerId || '');
-        const userDoc = await getDoc(userRef);
-        if (userDoc.exists()) {
-          const currentBalance = userDoc.data().balance || 0;
-          await updateDoc(userRef, {
+        const walletRef = doc(db, 'wallets', transaction.userId);
+        const walletDoc = await getDoc(walletRef);
+        
+        if (walletDoc.exists()) {
+          const currentBalance = walletDoc.data().balance || 0;
+          await updateDoc(walletRef, {
             balance: currentBalance - transaction.amount,
+            updatedAt: new Date().toISOString(),
           });
         }
       }
@@ -197,15 +187,12 @@ const Transactions = () => {
       const searchLower = searchQuery.toLowerCase();
       return (
         transaction.description.toLowerCase().includes(searchLower) ||
-        transaction.propertyTitle?.toLowerCase().includes(searchLower) ||
-        transaction.buyerName?.toLowerCase().includes(searchLower) ||
-        transaction.sellerName?.toLowerCase().includes(searchLower)
+        transaction.userName.toLowerCase().includes(searchLower)
       );
     }
     return true;
   });
 
-  // Example chart data
   const transactionData = [
     { name: 'Mon', amount: 5000 },
     { name: 'Tue', amount: 7500 },
@@ -219,7 +206,6 @@ const Transactions = () => {
   return (
     <DashboardLayout title="Transactions">
       <div className="space-y-6">
-        {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatCard
             title="Total Transactions"
@@ -248,7 +234,6 @@ const Transactions = () => {
           />
         </div>
 
-        {/* Transaction Chart */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <ChartCard
             title="Transaction Volume"
@@ -270,7 +255,6 @@ const Transactions = () => {
           />
         </div>
 
-        {/* Transactions Table */}
         <div className="bg-white rounded-xl shadow-sm p-6">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
             <h3 className="text-lg font-medium text-gray-900 mb-3 md:mb-0">Transaction History</h3>
@@ -294,10 +278,10 @@ const Transactions = () => {
                   className="pl-3 pr-10 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500"
                 >
                   <option value="all">All Types</option>
+                  <option value="withdrawal">Withdrawals</option>
                   <option value="payment">Payments</option>
                   <option value="refund">Refunds</option>
                   <option value="commission">Commissions</option>
-                  <option value="withdrawal">Withdrawals</option>
                 </select>
                 <Filter className="absolute right-3 top-2.5 h-5 w-5 text-gray-400 pointer-events-none" />
               </div>
@@ -326,8 +310,7 @@ const Transactions = () => {
             <div className="flex justify-center py-12">
               <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-primary-600"></div>
             </div>
-          ) : 
-          filteredTransactions.length === 0 ? (
+          ) : filteredTransactions.length === 0 ? (
             <div className="text-center py-12">
               <CreditCard className="mx-auto h-12 w-12 text-gray-400" />
               <h3 className="mt-4 text-lg font-medium text-gray-900">No transactions found</h3>
@@ -335,8 +318,7 @@ const Transactions = () => {
                 {searchQuery ? 'Try adjusting your search or filters' : 'Transactions will appear here'}
               </p>
             </div>
-          ):
-           (
+          ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
@@ -346,7 +328,7 @@ const Transactions = () => {
                     </th>
                     {user?.role === 'admin' && (
                       <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Users
+                        User
                       </th>
                     )}
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -384,9 +366,9 @@ const Transactions = () => {
                             <div className="text-sm text-gray-500">
                               {transaction.description}
                             </div>
-                            {transaction.propertyTitle && (
+                            {transaction.method && (
                               <div className="text-xs text-gray-400">
-                                Property: {transaction.propertyTitle}
+                                Method: {transaction.method}
                               </div>
                             )}
                           </div>
@@ -395,7 +377,7 @@ const Transactions = () => {
                       {user?.role === 'admin' && (
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-900">
-                              <div> {transaction.userName}</div> 
+                            {transaction.userName}
                           </div>
                         </td>
                       )}
@@ -406,7 +388,7 @@ const Transactions = () => {
                             : 'text-warning-600'
                         }`}>
                           {transaction.type === 'refund' ? '-' : '+'}
-                          {transaction.amount?.toLocaleString()} SAR
+                          {transaction.amount.toLocaleString()} SAR
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -445,7 +427,6 @@ const Transactions = () => {
         </div>
       </div>
 
-      {/* Status Update Modal */}
       {showStatusModal && selectedTransaction && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
