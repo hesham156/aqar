@@ -37,46 +37,42 @@ const Wallet = () => {
 
   useEffect(() => {
     if (!user) return;
-    const fetchTransactions = async () => {
-        let transactionsQuery;
-transactionsQuery = query(
-            collection(db, 'withdrawalRequests'),
-            where('buyerId', '==', user.uid),
-            orderBy('createdAt', 'desc')
-          );
-      const snapshot = await getDocs(transactionsQuery);
-        }
-            fetchTransactions();
 
-    const fetchWalletData = async () => {
+    const fetchTransactions = async () => {
       setIsLoading(true);
       try {
+        // Fetch wallet data
         const walletRef = doc(db, 'wallets', user.uid);
         const walletSnap = await getDoc(walletRef);
         
         if (walletSnap.exists()) {
           const walletData = walletSnap.data();
           setBalance(walletData.balance || 0);
-          
-          // Sort transactions by date (newest first)
-          const sortedTransactions = [...(walletData.transactions || [])].sort(
-            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          );
-          
-          setTransactions(sortedTransactions);
         } else {
-          // Create wallet for user if it doesn't exist using setDoc instead of updateDoc
           await setDoc(walletRef, {
             balance: 0,
-            transactions: [],
             userId: user.uid,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           });
-          
           setBalance(0);
-          setTransactions([]);
         }
+
+        // Fetch transactions from withdrawalRequests collection
+        const transactionsQuery = query(
+          collection(db, 'withdrawalRequests'),
+          where('userId', '==', user.uid),
+          orderBy('createdAt', 'desc')
+        );
+        
+        const snapshot = await getDocs(transactionsQuery);
+        const transactionsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || doc.data().createdAt
+        })) as Transaction[];
+
+        setTransactions(transactionsData);
       } catch (error) {
         console.error('Error fetching wallet data:', error);
         toast.error('Failed to load wallet data');
@@ -84,8 +80,8 @@ transactionsQuery = query(
         setIsLoading(false);
       }
     };
-    
-    fetchWalletData();
+
+    fetchTransactions();
   }, [user]);
 
   const handleWithdraw = async () => {
@@ -104,49 +100,39 @@ transactionsQuery = query(
     setIsWithdrawLoading(true);
     
     try {
-      const walletRef = doc(db, 'wallets', user.uid);
-      const walletSnap = await getDoc(walletRef);
+      // Add withdrawal request
+      const withdrawalRequest = {
+        userId: user.uid,
+        userName: user.displayName,
+        amount: withdrawAmount,
+        method: withdrawMethod,
+        type: 'withdrawal',
+        status: 'pending',
+        description: `Withdrawal request via ${withdrawMethod}`,
+        createdAt: serverTimestamp(),
+      };
+
+      await addDoc(collection(db, 'withdrawalRequests'), withdrawalRequest);
       
-      if (walletSnap.exists()) {
-        const walletData = walletSnap.data();
-        const currentBalance = walletData.balance || 0;
-        const currentTransactions = walletData.transactions || [];
-        
-        const newTransaction: Omit<Transaction, 'id'> = {
-          type: 'withdrawal',
-          amount: withdrawAmount,
-          status: 'pending',
-          description: `Withdrawal to ${withdrawMethod === 'bank' ? 'bank account' : 'credit card'}`,
-          createdAt: new Date().toISOString(),
-        };
-        
-        // Update wallet balance and add the transaction
-        await updateDoc(walletRef, {
-          balance: currentBalance - withdrawAmount,
-          transactions: [newTransaction, ...currentTransactions],
-          updatedAt: new Date().toISOString(),
-        });
-        
-        // Add withdrawal request to a separate collection for admin approval
-        await addDoc(collection(db, 'withdrawalRequests'), {
-          userId: user.uid,
-          userName: user.displayName,
-          amount: withdrawAmount,
-          method: withdrawMethod,
-          status: 'pending',
-          createdAt: serverTimestamp(),
-        });
-        
-        setBalance(currentBalance - withdrawAmount);
-        setTransactions([
-          { ...newTransaction, id: `tx-${Date.now()}` },
-          ...transactions,
-        ]);
-        
-        toast.success('Withdrawal request submitted successfully');
-        setIsWithdrawModalOpen(false);
-        setWithdrawAmount(0);
-      }
+      toast.success('Withdrawal request submitted successfully');
+      setIsWithdrawModalOpen(false);
+      setWithdrawAmount(0);
+
+      // Refresh transactions
+      const transactionsQuery = query(
+        collection(db, 'withdrawalRequests'),
+        where('userId', '==', user.uid),
+        orderBy('createdAt', 'desc')
+      );
+      
+      const snapshot = await getDocs(transactionsQuery);
+      const transactionsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || doc.data().createdAt
+      })) as Transaction[];
+
+      setTransactions(transactionsData);
     } catch (error) {
       console.error('Error processing withdrawal:', error);
       toast.error('Failed to process withdrawal');
@@ -253,7 +239,7 @@ transactionsQuery = query(
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredTransactions.map((transaction) => {      console.log(transaction);return(
+                  {filteredTransactions.map((transaction) => (
                     <tr key={transaction.createdAt}>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
@@ -307,7 +293,7 @@ transactionsQuery = query(
                         })}
                       </td>
                     </tr>
-                  )})}
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -415,8 +401,8 @@ transactionsQuery = query(
                   >
                     {isWithdrawLoading ? (
                       <span className="flex items-center">
-                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white\" xmlns="http://www.w3.org/2000/svg\" fill="none\" viewBox="0 0 24 24">
-                          <circle className="opacity-25\" cx="12\" cy="12\" r="10\" stroke="currentColor\" strokeWidth="4"></circle>
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
                         Processing...
