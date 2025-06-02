@@ -20,6 +20,7 @@ const BuyerDashboard = lazy(() => import('./pages/dashboard/buyer/BuyerDashboard
 const Wallet = lazy(() => import('./pages/Wallet'));
 const Profile = lazy(() => import('./pages/Profile'));
 const Transactions = lazy(() => import('./pages/Transactions'));
+const Messages = lazy(() => import('./pages/Messages'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 function App() {
@@ -95,6 +96,12 @@ function App() {
           } />
           
           {/* Common protected routes */}
+          <Route path="messages" element={
+            <ProtectedRoute>
+              <Messages />
+            </ProtectedRoute>
+          } />
+          
           <Route path="transactions" element={
             <ProtectedRoute>
               <Transactions />

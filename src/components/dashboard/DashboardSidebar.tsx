@@ -76,7 +76,7 @@ const DashboardSidebar = () => {
     {
       title: 'Messages',
       icon: <MessageSquare className="w-5 h-5" />,
-      path: '/dashboard/messages',
+      path: '/messages',
       roles: ['admin', 'seller', 'buyer'],
     },
     {
