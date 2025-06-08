@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Bell, Search, Menu, User } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNotifications } from '../../contexts/NotificationContext';
+import { format } from 'date-fns';
 
 interface DashboardHeaderProps {
   toggleSidebar: () => void;
@@ -9,31 +11,10 @@ interface DashboardHeaderProps {
 
 const DashboardHeader = ({ toggleSidebar, title }: DashboardHeaderProps) => {
   const { user } = useAuth();
+  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const [searchQuery, setSearchQuery] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1,
-      message: 'New property inquiry received',
-      time: '5 minutes ago',
-      read: false,
-    },
-    {
-      id: 2,
-      message: 'Your property listing was approved',
-      time: '1 hour ago',
-      read: false,
-    },
-    {
-      id: 3,
-      message: 'Payment received for property #1234',
-      time: '3 hours ago',
-      read: true,
-    },
-  ]);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-
-  const unreadNotificationsCount = notifications.filter(n => !n.read).length;
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,8 +32,16 @@ const DashboardHeader = ({ toggleSidebar, title }: DashboardHeaderProps) => {
     if (isDropdownOpen) setIsDropdownOpen(false);
   };
 
-  const markAllAsRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, read: true })));
+  const handleNotificationClick = async (notification: any) => {
+    if (!notification.read) {
+      await markAsRead(notification.id);
+    }
+    
+    // Handle notification action based on type
+    if (notification.type === 'message' && notification.data?.chatId) {
+      // Navigate to messages with specific chat
+      window.location.href = `/messages?chat=${notification.data.chatId}`;
+    }
   };
 
   return (
@@ -72,10 +61,11 @@ const DashboardHeader = ({ toggleSidebar, title }: DashboardHeaderProps) => {
         <form onSubmit={handleSearch} className="relative hidden md:block">
           <input
             type="text"
-            placeholder="Search..."
+            placeholder="البحث..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10 pr-4 py-2 w-64 rounded-full border border-gray-300 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+            dir="rtl"
           />
           <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
         </form>
@@ -87,9 +77,9 @@ const DashboardHeader = ({ toggleSidebar, title }: DashboardHeaderProps) => {
             className="relative p-2 rounded-full text-gray-600 hover:text-primary-600 hover:bg-gray-100 transition-colors"
           >
             <Bell className="h-6 w-6" />
-            {unreadNotificationsCount > 0 && (
+            {unreadCount > 0 && (
               <span className="absolute top-1 right-1 bg-error-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
-                {unreadNotificationsCount}
+                {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             )}
           </button>
@@ -97,38 +87,49 @@ const DashboardHeader = ({ toggleSidebar, title }: DashboardHeaderProps) => {
           {isNotificationsOpen && (
             <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg py-2 z-50 border border-gray-200">
               <div className="px-4 py-2 border-b border-gray-200 flex justify-between items-center">
-                <h3 className="font-medium text-gray-900">Notifications</h3>
-                {unreadNotificationsCount > 0 && (
+                <h3 className="font-medium text-gray-900">الإشعارات</h3>
+                {unreadCount > 0 && (
                   <button
                     onClick={markAllAsRead}
                     className="text-xs text-primary-600 hover:text-primary-700"
                   >
-                    Mark all as read
+                    تحديد الكل كمقروء
                   </button>
                 )}
               </div>
               <div className="max-h-80 overflow-y-auto">
                 {notifications.length > 0 ? (
-                  notifications.map((notification) => (
+                  notifications.slice(0, 10).map((notification) => (
                     <div
                       key={notification.id}
-                      className={`px-4 py-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+                      onClick={() => handleNotificationClick(notification)}
+                      className={`px-4 py-3 border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer ${
                         !notification.read ? 'bg-primary-50' : ''
                       }`}
                     >
-                      <p className="text-sm text-gray-800">{notification.message}</p>
-                      <p className="text-xs text-gray-500 mt-1">{notification.time}</p>
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-800">{notification.title}</p>
+                          <p className="text-sm text-gray-600 mt-1">{notification.message}</p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {format(new Date(notification.createdAt), 'dd/MM/yyyy HH:mm')}
+                          </p>
+                        </div>
+                        {!notification.read && (
+                          <div className="w-2 h-2 bg-primary-600 rounded-full mt-1 ml-2"></div>
+                        )}
+                      </div>
                     </div>
                   ))
                 ) : (
                   <div className="px-4 py-6 text-center text-gray-500">
-                    No notifications
+                    لا توجد إشعارات
                   </div>
                 )}
               </div>
               <div className="px-4 py-2 border-t border-gray-200">
                 <button className="text-sm text-primary-600 hover:text-primary-700 w-full text-center">
-                  View all notifications
+                  عرض جميع الإشعارات
                 </button>
               </div>
             </div>
@@ -159,20 +160,20 @@ const DashboardHeader = ({ toggleSidebar, title }: DashboardHeaderProps) => {
                 href="/profile"
                 className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
               >
-                Profile Settings
+                إعدادات الملف الشخصي
               </a>
               <a
                 href="/wallet"
                 className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
               >
-                Wallet
+                المحفظة
               </a>
               <div className="border-t border-gray-200 mt-2 pt-2">
                 <a
                   href="/logout"
                   className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
                 >
-                  Logout
+                  تسجيل الخروج
                 </a>
               </div>
             </div>
