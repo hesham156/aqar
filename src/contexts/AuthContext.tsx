@@ -158,7 +158,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       toast.success('Signed in successfully!');
     } catch (error) {
       console.error('Sign in error:', error);
-      toast.error('Failed to sign in. Please check your credentials.');
+      // Remove the generic toast.error here to prevent duplicate error messages
+      // The Login component will handle specific error messaging
       throw error;
     } finally {
       setLoading(false);
