@@ -82,12 +82,14 @@ const AddProperty = () => {
         .when('type', {
           is: (type: string) => ['apartment', 'villa'].includes(type),
           then: (schema) => schema.required('Number of bedrooms is required'),
+          otherwise: (schema) => schema.notRequired(),
         }),
       bathrooms: Yup.number()
         .min(0, 'Bathrooms cannot be negative')
         .when('type', {
           is: (type: string) => ['apartment', 'villa'].includes(type),
           then: (schema) => schema.required('Number of bathrooms is required'),
+          otherwise: (schema) => schema.notRequired(),
         }),
       area: Yup.number()
         .required('Area is required')
@@ -97,7 +99,11 @@ const AddProperty = () => {
       features: Yup.array().min(1, 'Select at least one feature'),
     }),
     onSubmit: async (values) => {
-      if (!user) return;
+      if (!user) {
+        toast.error('You must be logged in to create a property');
+        return;
+      }
+      
       if (selectedImages.length === 0) {
         toast.error('Please upload at least one image');
         return;
@@ -107,7 +113,9 @@ const AddProperty = () => {
       try {
         // Upload images first
         const uploadPromises = selectedImages.map(async (image) => {
-          const storageRef = ref(storage, `properties/${Date.now()}_${image.name}`);
+          const timestamp = Date.now();
+          const fileName = `${timestamp}_${image.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
+          const storageRef = ref(storage, `properties/${fileName}`);
           await uploadBytes(storageRef, image);
           return getDownloadURL(storageRef);
         });
@@ -134,8 +142,8 @@ const AddProperty = () => {
             value: true
           })) as PropertyFeature[],
           sellerId: user.uid,
-          sellerName: user.displayName,
-          status: 'pending',
+          sellerName: user.displayName || 'Unknown Seller',
+          status: 'pending' as const,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
           views: 0,
@@ -149,7 +157,7 @@ const AddProperty = () => {
         navigate('/dashboard/seller');
       } catch (error) {
         console.error('Error creating property:', error);
-        toast.error('Failed to create property listing');
+        toast.error('Failed to create property listing. Please try again.');
       } finally {
         setIsUploading(false);
       }
@@ -158,6 +166,8 @@ const AddProperty = () => {
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
+    
+    // Validate file types
     const validFiles = files.filter(file => {
       const isValid = file.type.startsWith('image/');
       if (!isValid) {
@@ -166,15 +176,24 @@ const AddProperty = () => {
       return isValid;
     });
 
-    if (selectedImages.length + validFiles.length > 10) {
+    // Check file size (max 5MB per file)
+    const validSizedFiles = validFiles.filter(file => {
+      const isValidSize = file.size <= 5 * 1024 * 1024; // 5MB
+      if (!isValidSize) {
+        toast.error(`${file.name} is too large. Maximum size is 5MB`);
+      }
+      return isValidSize;
+    });
+
+    if (selectedImages.length + validSizedFiles.length > 10) {
       toast.error('Maximum 10 images allowed');
       return;
     }
 
-    setSelectedImages(prev => [...prev, ...validFiles]);
+    setSelectedImages(prev => [...prev, ...validSizedFiles]);
     
     // Create preview URLs
-    validFiles.forEach(file => {
+    validSizedFiles.forEach(file => {
       const reader = new FileReader();
       reader.onloadend = () => {
         setImageUrls(prev => [...prev, reader.result as string]);
@@ -203,6 +222,10 @@ const AddProperty = () => {
     'Elevator',
     '24/7 Security',
     'Backup Generator',
+    'Furnished',
+    'Pet Friendly',
+    'Laundry Room',
+    'Fireplace',
   ];
 
   return (
@@ -216,7 +239,7 @@ const AddProperty = () => {
             <div className="space-y-6">
               <div>
                 <label htmlFor="title" className="block text-sm font-medium text-gray-700">
-                  Property Title
+                  Property Title *
                 </label>
                 <div className="mt-1">
                   <input
@@ -239,7 +262,7 @@ const AddProperty = () => {
 
               <div>
                 <label htmlFor="description" className="block text-sm font-medium text-gray-700">
-                  Description
+                  Description *
                 </label>
                 <div className="mt-1">
                   <textarea
@@ -263,7 +286,7 @@ const AddProperty = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label htmlFor="type" className="block text-sm font-medium text-gray-700">
-                    Property Type
+                    Property Type *
                   </label>
                   <div className="mt-1">
                     <select
@@ -290,7 +313,7 @@ const AddProperty = () => {
 
                 <div>
                   <label htmlFor="category" className="block text-sm font-medium text-gray-700">
-                    Category
+                    Category *
                   </label>
                   <div className="mt-1">
                     <select
@@ -322,7 +345,7 @@ const AddProperty = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label htmlFor="price" className="block text-sm font-medium text-gray-700">
-                  Price (SAR)
+                  Price (SAR) *
                 </label>
                 <div className="mt-1 relative rounded-md shadow-sm">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -348,7 +371,7 @@ const AddProperty = () => {
 
               <div>
                 <label htmlFor="area" className="block text-sm font-medium text-gray-700">
-                  Area (m²)
+                  Area (m²) *
                 </label>
                 <div className="mt-1">
                   <input
@@ -373,13 +396,14 @@ const AddProperty = () => {
                 <>
                   <div>
                     <label htmlFor="bedrooms" className="block text-sm font-medium text-gray-700">
-                      Bedrooms
+                      Bedrooms *
                     </label>
                     <div className="mt-1">
                       <input
                         type="number"
                         id="bedrooms"
                         name="bedrooms"
+                        min="0"
                         className={`block w-full px-3 py-2 border ${
                           formik.touched.bedrooms && formik.errors.bedrooms
                             ? 'border-error-300 focus:ring-error-500 focus:border-error-500'
@@ -396,13 +420,14 @@ const AddProperty = () => {
 
                   <div>
                     <label htmlFor="bathrooms" className="block text-sm font-medium text-gray-700">
-                      Bathrooms
+                      Bathrooms *
                     </label>
                     <div className="mt-1">
                       <input
                         type="number"
                         id="bathrooms"
                         name="bathrooms"
+                        min="0"
                         className={`block w-full px-3 py-2 border ${
                           formik.touched.bathrooms && formik.errors.bathrooms
                             ? 'border-error-300 focus:ring-error-500 focus:border-error-500'
@@ -428,7 +453,7 @@ const AddProperty = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label htmlFor="city" className="block text-sm font-medium text-gray-700">
-                  City
+                  City *
                 </label>
                 <div className="mt-1">
                   <select
@@ -456,7 +481,7 @@ const AddProperty = () => {
 
               <div>
                 <label htmlFor="address" className="block text-sm font-medium text-gray-700">
-                  Address
+                  Address *
                 </label>
                 <div className="mt-1">
                   <input
@@ -481,7 +506,7 @@ const AddProperty = () => {
 
           {/* Features */}
           <div className="bg-white rounded-xl shadow-sm p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-6">Features</h2>
+            <h2 className="text-lg font-medium text-gray-900 mb-6">Features *</h2>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               {commonFeatures.map((feature) => (
@@ -520,17 +545,17 @@ const AddProperty = () => {
 
           {/* Images */}
           <div className="bg-white rounded-xl shadow-sm p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-6">Property Images</h2>
+            <h2 className="text-lg font-medium text-gray-900 mb-6">Property Images *</h2>
             
             <div className="space-y-4">
               <div className="flex items-center justify-center w-full">
                 <label
                   htmlFor="images"
-                  className="w-full h-32 flex flex-col items-center justify-center px-4 py-6 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer hover:bg-gray-50"
+                  className="w-full h-32 flex flex-col items-center justify-center px-4 py-6 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
                 >
                   <Upload className="h-8 w-8 text-gray-400" />
                   <p className="mt-2 text-sm text-gray-500">Click to upload images</p>
-                  <p className="text-xs text-gray-400">PNG, JPG up to 10 images</p>
+                  <p className="text-xs text-gray-400">PNG, JPG up to 5MB each (max 10 images)</p>
                   <input
                     type="file"
                     id="images"
@@ -563,6 +588,10 @@ const AddProperty = () => {
                   ))}
                 </div>
               )}
+              
+              {selectedImages.length === 0 && (
+                <p className="text-sm text-error-600">Please upload at least one image</p>
+              )}
             </div>
           </div>
 
@@ -577,7 +606,7 @@ const AddProperty = () => {
             </button>
             <button
               type="submit"
-              disabled={isUploading || !formik.isValid || !formik.dirty}
+              disabled={isUploading || !formik.isValid || selectedImages.length === 0}
               className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
             >
               {isUploading ? (

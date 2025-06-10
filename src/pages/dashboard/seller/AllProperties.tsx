@@ -12,7 +12,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../../../firebase/config';
 import { useAuth } from '../../../contexts/AuthContext';
 import { Property, PropertyStatus, PropertyType, PropertyCategory } from '../../../types/property';
@@ -38,35 +38,28 @@ const AllProperties = () => {
       try {
         let propertiesQuery = query(
           collection(db, 'properties'),
-          where('sellerId', '==', user.uid)
-        );
-
-        // Apply filters
-        if (selectedStatus !== 'all') {
-          propertiesQuery = query(propertiesQuery, where('status', '==', selectedStatus));
-        }
-        if (selectedType !== 'all') {
-          propertiesQuery = query(propertiesQuery, where('type', '==', selectedType));
-        }
-        if (selectedCategory !== 'all') {
-          propertiesQuery = query(propertiesQuery, where('category', '==', selectedCategory));
-        }
-
-        // Apply sorting
-        propertiesQuery = query(
-          propertiesQuery,
-          orderBy(
-            sortBy === 'date' ? 'createdAt' : 
-            sortBy === 'views' ? 'views' : 'price',
-            sortOrder
-          )
+          where('sellerId', '==', user.uid),
+          orderBy('createdAt', 'desc')
         );
 
         const snapshot = await getDocs(propertiesQuery);
         let propertiesData = snapshot.docs.map(doc => ({
           id: doc.id,
-          ...doc.data()
+          ...doc.data(),
+          createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || doc.data().createdAt,
+          updatedAt: doc.data().updatedAt?.toDate?.()?.toISOString() || doc.data().updatedAt,
         })) as Property[];
+
+        // Apply filters
+        if (selectedStatus !== 'all') {
+          propertiesData = propertiesData.filter(property => property.status === selectedStatus);
+        }
+        if (selectedType !== 'all') {
+          propertiesData = propertiesData.filter(property => property.type === selectedType);
+        }
+        if (selectedCategory !== 'all') {
+          propertiesData = propertiesData.filter(property => property.category === selectedCategory);
+        }
 
         // Apply search filter
         if (searchQuery) {
@@ -75,6 +68,33 @@ const AllProperties = () => {
             property.location.city.toLowerCase().includes(searchQuery.toLowerCase())
           );
         }
+
+        // Apply sorting
+        propertiesData.sort((a, b) => {
+          let aValue, bValue;
+          
+          switch (sortBy) {
+            case 'views':
+              aValue = a.views || 0;
+              bValue = b.views || 0;
+              break;
+            case 'price':
+              aValue = a.price;
+              bValue = b.price;
+              break;
+            case 'date':
+            default:
+              aValue = new Date(a.createdAt).getTime();
+              bValue = new Date(b.createdAt).getTime();
+              break;
+          }
+
+          if (sortOrder === 'asc') {
+            return aValue > bValue ? 1 : -1;
+          } else {
+            return aValue < bValue ? 1 : -1;
+          }
+        });
 
         setProperties(propertiesData);
       } catch (error) {
@@ -131,7 +151,7 @@ const AllProperties = () => {
           </div>
           
           <Link
-            to="/dashboard/properties/add"
+            to="/dashboard/seller/properties/add"
             className="inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
           >
             <Plus className="h-5 w-5 mr-2" />
@@ -230,7 +250,7 @@ const AllProperties = () => {
             </p>
             {!searchQuery && (
               <Link
-                to="/dashboard/properties/add"
+                to="/dashboard/seller/properties/add"
                 className="mt-4 inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
               >
                 <Plus className="h-5 w-5 mr-2" />
@@ -311,15 +331,15 @@ const AllProperties = () => {
                         <div className="flex items-center space-x-4 text-sm text-gray-500">
                           <div className="flex items-center">
                             <Eye className="h-4 w-4 mr-1" />
-                            {property.views}
+                            {property.views || 0}
                           </div>
                           <div className="flex items-center">
                             <Heart className="h-4 w-4 mr-1" />
-                            {property.favorites}
+                            {property.favorites || 0}
                           </div>
                           <div className="flex items-center">
                             <MessageSquare className="h-4 w-4 mr-1" />
-                            {property.inquiries}
+                            {property.inquiries || 0}
                           </div>
                         </div>
                       </td>
@@ -332,7 +352,7 @@ const AllProperties = () => {
                             View
                           </Link>
                           <Link
-                            to={`/dashboard/properties/edit/${property.id}`}
+                            to={`/dashboard/seller/properties/edit/${property.id}`}
                             className="text-primary-600 hover:text-primary-900"
                           >
                             Edit
