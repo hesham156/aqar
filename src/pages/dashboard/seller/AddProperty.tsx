@@ -112,15 +112,27 @@ const AddProperty = () => {
       setIsUploading(true);
       try {
         // Upload images first
-        const uploadPromises = selectedImages.map(async (image) => {
-          const timestamp = Date.now();
-          const fileName = `${timestamp}_${image.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
-          const storageRef = ref(storage, `properties/${fileName}`);
-          await uploadBytes(storageRef, image);
-          return getDownloadURL(storageRef);
+        const uploadPromises = selectedImages.map(async (image, index) => {
+          try {
+            const timestamp = Date.now();
+            const randomId = Math.random().toString(36).substring(2, 15);
+            const fileName = `property_${timestamp}_${randomId}_${index}.${image.type.split('/')[1]}`;
+            const storageRef = ref(storage, `properties/${fileName}`);
+            
+            console.log('Uploading image:', fileName);
+            const snapshot = await uploadBytes(storageRef, image);
+            const downloadURL = await getDownloadURL(snapshot.ref);
+            console.log('Image uploaded successfully:', downloadURL);
+            return downloadURL;
+          } catch (error) {
+            console.error('Error uploading image:', error);
+            throw new Error(`Failed to upload image: ${image.name}`);
+          }
         });
 
+        console.log('Starting image uploads...');
         const uploadedUrls = await Promise.all(uploadPromises);
+        console.log('All images uploaded:', uploadedUrls);
 
         // Create property document
         const propertyData = {
@@ -151,13 +163,19 @@ const AddProperty = () => {
           inquiries: 0,
         };
 
+        console.log('Creating property document:', propertyData);
         const docRef = await addDoc(collection(db, 'properties'), propertyData);
+        console.log('Property created with ID:', docRef.id);
         
         toast.success('Property listed successfully! Awaiting approval.');
         navigate('/dashboard/seller');
       } catch (error) {
         console.error('Error creating property:', error);
-        toast.error('Failed to create property listing. Please try again.');
+        if (error instanceof Error) {
+          toast.error(`Failed to create property: ${error.message}`);
+        } else {
+          toast.error('Failed to create property listing. Please try again.');
+        }
       } finally {
         setIsUploading(false);
       }
@@ -167,39 +185,57 @@ const AddProperty = () => {
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     
-    // Validate file types
-    const validFiles = files.filter(file => {
-      const isValid = file.type.startsWith('image/');
-      if (!isValid) {
-        toast.error(`${file.name} is not a valid image file`);
+    if (files.length === 0) return;
+
+    // Validate file types and sizes
+    const validFiles: File[] = [];
+    const errors: string[] = [];
+
+    files.forEach(file => {
+      // Check file type
+      if (!file.type.startsWith('image/')) {
+        errors.push(`${file.name} is not a valid image file`);
+        return;
       }
-      return isValid;
+
+      // Check file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        errors.push(`${file.name} is too large. Maximum size is 5MB`);
+        return;
+      }
+
+      validFiles.push(file);
     });
 
-    // Check file size (max 5MB per file)
-    const validSizedFiles = validFiles.filter(file => {
-      const isValidSize = file.size <= 5 * 1024 * 1024; // 5MB
-      if (!isValidSize) {
-        toast.error(`${file.name} is too large. Maximum size is 5MB`);
-      }
-      return isValidSize;
-    });
+    // Show errors if any
+    if (errors.length > 0) {
+      errors.forEach(error => toast.error(error));
+    }
 
-    if (selectedImages.length + validSizedFiles.length > 10) {
+    // Check total number of images
+    if (selectedImages.length + validFiles.length > 10) {
       toast.error('Maximum 10 images allowed');
       return;
     }
 
-    setSelectedImages(prev => [...prev, ...validSizedFiles]);
-    
-    // Create preview URLs
-    validSizedFiles.forEach(file => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImageUrls(prev => [...prev, reader.result as string]);
-      };
-      reader.readAsDataURL(file);
-    });
+    if (validFiles.length > 0) {
+      setSelectedImages(prev => [...prev, ...validFiles]);
+      
+      // Create preview URLs
+      validFiles.forEach(file => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setImageUrls(prev => [...prev, reader.result as string]);
+        };
+        reader.onerror = () => {
+          toast.error(`Failed to read file: ${file.name}`);
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // Reset input
+    e.target.value = '';
   };
 
   const removeImage = (index: number) => {
